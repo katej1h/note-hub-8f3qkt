@@ -942,10 +942,27 @@ function flushPush() {
 }
 
 /* 다른 기기 기록을 이 기기에 반영 */
+function mergeDeep(base, over) {
+  if (Array.isArray(over) || over === null || typeof over !== 'object') return over;
+  if (Array.isArray(base) || base === null || typeof base !== 'object') base = {};
+  const keys = {};
+  Object.keys(base).forEach(function (k) { keys[k] = 1; });
+  Object.keys(over).forEach(function (k) { keys[k] = 1; });
+  const out = {};
+  Object.keys(keys).forEach(function (k) {
+    const o = over[k], b = base[k];
+    if (o === undefined) { out[k] = b; return; }
+    if (b && typeof b === 'object' && !Array.isArray(b) && o && typeof o === 'object' && !Array.isArray(o)) out[k] = mergeDeep(b, o);
+    else out[k] = o;
+  });
+  return out;
+}
+
 function applyRemote(data) {
   const keep = {};
   LOCAL_ONLY.forEach(function (k) { keep[k] = state[k]; });
-  const next = mergeState(defaultState(), data);
+  /* 기본값에 있는 키만이 아니라 날짜 키처럼 새로 생긴 키까지 모두 살린다 */
+  const next = mergeDeep(defaultState(), data);
 
   /* 대화는 id 기준 합집합 — 동시에 보낸 메시지가 사라지지 않도록 */
   const chatMap = {};
@@ -963,6 +980,16 @@ function applyRemote(data) {
   state = next;
   saveLocal();
   renderAll();
+  /* 이 기기에만 있던 기록(보내지 못한 체크 등)이 있으면 다시 올린다 */
+  if (stableStr(syncPayloadData()) !== stableStr(data)) queuePush();
+}
+
+function stableStr(v) {
+  if (Array.isArray(v)) return '[' + v.map(stableStr).join(',') + ']';
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + stableStr(v[k]); }).join(',') + '}';
+  }
+  return JSON.stringify(v === undefined ? null : v);
 }
 
 function onRemoteValue(snap) {
