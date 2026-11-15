@@ -980,16 +980,6 @@ function applyRemote(data) {
   state = next;
   saveLocal();
   renderAll();
-  /* 이 기기에만 있던 기록(보내지 못한 체크 등)이 있으면 다시 올린다 */
-  if (stableStr(syncPayloadData()) !== stableStr(data)) queuePush();
-}
-
-function stableStr(v) {
-  if (Array.isArray(v)) return '[' + v.map(stableStr).join(',') + ']';
-  if (v && typeof v === 'object') {
-    return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + stableStr(v[k]); }).join(',') + '}';
-  }
-  return JSON.stringify(v === undefined ? null : v);
 }
 
 function onRemoteValue(snap) {
