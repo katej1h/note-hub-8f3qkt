@@ -582,7 +582,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const uid = p => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 
-const STORE = 'familyDashboard.v2';
+const STORE = 'familyDashboard.v3';
 const CHILDREN = ['jin', 'wan', 'dan'];
 
 /* =========================================================
@@ -672,27 +672,27 @@ const ROUTINE_SEED = {
   dan: ['유치원 준비물 챙기기', '양치하기', '장난감 정리하기', '동화책 읽기', '가방정리', '옷정리', '이불정리']
 };
 
-// 아이별 고정 공부 항목 — 항목마다 정한 금액(기본 100원)만큼 적립
+// 아이별 고정 공부 항목 — 항목마다 정한 금액(기본 10원)만큼 적립
 const STUDY_PRESET = {
   jin: [
-    { title: '수학', amount: 100 },
-    { title: '영어', amount: 100 },
-    { title: '국어', amount: 100 },
-    { title: '책읽기', amount: 100 },
-    { title: '글쓰기', amount: 100 },
-    { title: '1%', amount: 100 }
+    { title: '수학', amount: 10 },
+    { title: '영어', amount: 10 },
+    { title: '국어', amount: 10 },
+    { title: '책읽기', amount: 10 },
+    { title: '글쓰기', amount: 10 },
+    { title: '1%', amount: 10 }
   ],
   wan: [
-    { title: '국어', amount: 100 },
-    { title: '영어', amount: 100 },
-    { title: '수학', amount: 100 },
-    { title: '책읽기', amount: 100 },
-    { title: '1%', amount: 100 }
+    { title: '국어', amount: 10 },
+    { title: '영어', amount: 10 },
+    { title: '수학', amount: 10 },
+    { title: '책읽기', amount: 10 },
+    { title: '1%', amount: 10 }
   ],
   dan: [
-    { title: '한글 놀이', amount: 50 },
-    { title: '숫자 세기 놀이', amount: 50 },
-    { title: '색칠 공부', amount: 50 }
+    { title: '한글 놀이', amount: 10 },
+    { title: '숫자 세기 놀이', amount: 10 },
+    { title: '색칠 공부', amount: 10 }
   ]
 };
 
@@ -769,7 +769,7 @@ function defaultState() {
       wan: { start: 0, goal: 40000, entries: [] },
       dan: { start: 0, goal: 30000, entries: [] }
     },
-    defaults: { studyAmount: { jin: 100, wan: 100, dan: 50 } },
+    defaults: { studyAmount: { jin: 10, wan: 10, dan: 10 } },
     stamps: [],
     missions: {
       current: { emoji: '🚶', text: '가족 산책 10분' },
@@ -810,6 +810,13 @@ function loadState() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { saved = null; }
   const base = defaultState();
+  /* 저장 키가 v2에서 v3로 올라갔다 — 예전 기록은 쓰지 않고, 이 기기에서 고른 내 프로필만 이어받는다 */
+  if (!saved) {
+    try {
+      const old = JSON.parse(localStorage.getItem('familyDashboard.v2') || 'null');
+      if (old && typeof old.who === 'string') base.who = old.who;
+    } catch (e) { /* 무시 */ }
+  }
   state = saved ? mergeState(base, saved) : base;
   if (!saved) save();
 }
@@ -1746,7 +1753,7 @@ function sheetRoutine(mid, id) {
 
 function sheetStudy(cid, id) {
   const item = id ? (state.study[cid] || []).find(s => s.id === id) : null;
-  const defAmount = (state.defaults.studyAmount && state.defaults.studyAmount[cid]) || 50;
+  const defAmount = (state.defaults.studyAmount && state.defaults.studyAmount[cid]) || 10;
   openSheet({
     title: item ? '공부 항목 수정' : '공부 추가',
     sub: '끝냈을 때 쌓일 금액을 정해주세요.',
@@ -1808,7 +1815,7 @@ function sheetSettings() {
       '<label class="field"><span>한 줄 인사말</span><input id="sMotto" value="' + esc(state.motto) + '" maxlength="30"></label>' +
       '<div class="sheet-note" style="margin-top:6px">공부 적립 기본 금액</div>' +
       '<div class="field-row">' + CHILDREN.map(c =>
-        '<label class="field"><span>' + esc(memberOf(c).name) + '</span><input id="sAmt-' + c + '" type="number" step="10" min="0" inputmode="numeric" value="' + (d[c] || 50) + '"></label>'
+        '<label class="field"><span>' + esc(memberOf(c).name) + '</span><input id="sAmt-' + c + '" type="number" step="10" min="0" inputmode="numeric" value="' + (d[c] || 10) + '"></label>'
       ).join('') + '</div>' +
       '<div class="sheet-note" style="margin-top:6px">용돈 목표 금액</div>' +
       '<div class="field-row">' + CHILDREN.map(c =>
