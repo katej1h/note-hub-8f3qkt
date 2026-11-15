@@ -582,7 +582,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const uid = p => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 
-const STORE = 'familyDashboard.v1';
+const STORE = 'familyDashboard.v2';
 const CHILDREN = ['jin', 'wan', 'dan'];
 
 /* =========================================================
@@ -655,11 +655,11 @@ const AVATARS = {
    2. 기본 데이터
    ========================================================= */
 const MEMBER_SEED = [
-  { id: 'mom', name: '엄마', avatar: 'usagi', tagline: '우사기와 함께', stars: 3 },
-  { id: 'dad', name: '아빠', avatar: 'hachiware', tagline: '하치와레와 함께', stars: 2 },
-  { id: 'jin', name: '허진', avatar: 'chiikawa', tagline: '치이카와와 함께', stars: 6 },
-  { id: 'wan', name: '허완', avatar: 'momonga', tagline: '모몽가와 함께', stars: 5 },
-  { id: 'dan', name: '허단', avatar: 'kurimanju', tagline: '쿠리만주와 함께', stars: 4 }
+  { id: 'mom', name: '엄마', avatar: 'usagi', tagline: '우사기와 함께', stars: 0 },
+  { id: 'dad', name: '아빠', avatar: 'hachiware', tagline: '하치와레와 함께', stars: 0 },
+  { id: 'jin', name: '허진', avatar: 'chiikawa', tagline: '치이카와와 함께', stars: 0 },
+  { id: 'wan', name: '허완', avatar: 'momonga', tagline: '모몽가와 함께', stars: 0 },
+  { id: 'dan', name: '허단', avatar: 'kurimanju', tagline: '쿠리만주와 함께', stars: 0 }
 ];
 
 // 재원 님이 직접 정해준 아이들 공부·할 일 목록 (2026-11-15)
@@ -734,21 +734,10 @@ const TABS = [
 ];
 
 function defaultState() {
-  const now = new Date();
-  const y1 = dstr(addDays(now, -1));
-  const y2 = dstr(addDays(now, -2));
-  const y3 = dstr(addDays(now, -3));
-
   const routines = {};
   Object.keys(ROUTINE_SEED).forEach(mid => {
     routines[mid] = ROUTINE_SEED[mid].map((text, i) => ({ id: 'r_' + mid + '_' + i, text: text, doneOn: {} }));
   });
-  // 어제까지의 기록 (도장판·연속일수 예시)
-  routines.mom[0].doneOn[y1] = 1;
-  routines.wan[0].doneOn[y1] = 1;
-  routines.wan[1].doneOn[y1] = 1;
-  routines.jin[0].doneOn[y1] = 1;
-  routines.dan[1].doneOn[y1] = 1;
 
   // 완이 약 항목은 건강 탭의 복약 체크와 연결한다 (엄마·완이 항목이 같은 상태를 본다)
   routines.mom.forEach(it => {
@@ -766,28 +755,7 @@ function defaultState() {
       id: 's_' + cid + '_' + i, title: it.title, detail: '', amount: it.amount, pinned: i < 2, doneOn: {}
     }));
   });
-  study.jin[0].doneOn[y1] = 1;
-  study.jin[1].doneOn[y1] = 1;
-  study.jin[2].doneOn[y1] = 1;
-  study.wan[0].doneOn[y1] = 1;
-  study.wan[1].doneOn[y1] = 1;
-  study.dan[0].doneOn[y1] = 1;
 
-  const studyLog = {};
-  studyLog[y1] = {
-    jin: [
-      { id: 's_jin_0', title: '수학', amount: 100 },
-      { id: 's_jin_1', title: '영어', amount: 100 },
-      { id: 's_jin_2', title: '국어', amount: 100 }
-    ],
-    wan: [
-      { id: 's_wan_0', title: '국어', amount: 100 },
-      { id: 's_wan_1', title: '영어', amount: 100 }
-    ],
-    dan: [{ id: 's_dan_0', title: '한글 놀이', amount: 50 }]
-  };
-
-  const chatNow = now.getTime();
   return {
     v: 1,
     motto: '우리집의 포근한 하루',
@@ -795,36 +763,23 @@ function defaultState() {
     members: MEMBER_SEED.map(m => Object.assign({}, m)),
     routines: routines,
     study: study,
-    studyLog: studyLog,
+    studyLog: {},
     wallet: {
-      jin: { start: 44200, goal: 60000, entries: [] },
-      wan: { start: 28500, goal: 40000, entries: [{ id: 'w_wan_1', date: y2, type: 'deposit', amount: 3000, memo: '할머니 용돈' }] },
-      dan: { start: 12000, goal: 30000, entries: [{ id: 'w_dan_1', date: y3, type: 'spend', amount: 2000, memo: '딱지 샀어요' }] }
+      jin: { start: 0, goal: 60000, entries: [] },
+      wan: { start: 0, goal: 40000, entries: [] },
+      dan: { start: 0, goal: 30000, entries: [] }
     },
     defaults: { studyAmount: { jin: 100, wan: 100, dan: 50 } },
-    stamps: [y3, y2, y1],
+    stamps: [],
     missions: {
       current: { emoji: '🚶', text: '가족 산책 10분' },
-      completedDates: [y1],
-      log: [
-        { date: y2, emoji: '📚', text: '다 같이 책 한 챕터 읽기' },
-        { date: y1, emoji: '🚶', text: '가족 산책 10분' }
-      ]
+      completedDates: [],
+      log: []
     },
-    praises: [
-      { id: 'p_seed_1', date: y1, member: 'wan', emoji: '🙌', text: '스스로 했어요' },
-      { id: 'p_seed_2', date: y1, member: 'jin', emoji: '📖', text: '책을 읽었어요' }
-    ],
-    meds: (function () { const o = {}; o[y1] = { morning: true, evening: true }; o[y2] = { morning: true, evening: false }; return o; })(),
-    healthNotes: [
-      { id: 'h_seed_1', date: y1, member: 'wan', kind: '병원', text: '완이 약이 떨어지면 소아과에 문의하기' }
-    ],
-    chat: [
-      { id: 'c1', who: 'wan', type: 'text', text: '엄마 나 오늘 받아쓰기 다 맞았어! 🐥', at: chatNow - 1000 * 60 * 190, hearts: ['mom'], deleted: false },
-      { id: 'c2', who: 'mom', type: 'text', text: '우와 완이 최고~ 칭찬 스티커 붙여줄게 ⭐', at: chatNow - 1000 * 60 * 185, hearts: ['wan', 'jin'], deleted: false },
-      { id: 'c3', who: 'jin', type: 'text', text: '오늘 수학 문제집 2장 다 풀었어요', at: chatNow - 1000 * 60 * 120, hearts: [], deleted: false },
-      { id: 'c4', who: 'dad', type: 'sticker', text: '🐻', at: chatNow - 1000 * 60 * 55, hearts: ['mom'], deleted: false }
-    ],
+    praises: [],
+    meds: {},
+    healthNotes: [],
+    chat: [],
     who: 'mom',
     timer: { mode: 'down', duration: 600, sound: true },
     weather: null
