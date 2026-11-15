@@ -73,7 +73,7 @@ b,strong{font-weight:800}
 .header-info{padding:10px 2px 0}
 .date-line{font-size:12.5px;color:#A08F79;letter-spacing:-.2px}
 .motto-line{font-size:13px;color:#8D8272;margin-top:2px}
-.header-pill-row{display:flex;justify-content:flex-end;margin-top:8px}
+.header-pill-row{display:flex;justify-content:flex-end;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
 .pill{
   display:inline-flex;align-items:center;gap:5px;background:#fff;border-radius:999px;
   padding:7px 13px;font-size:12px;color:#6B5F4D;box-shadow:var(--shadow-soft);white-space:nowrap;
@@ -81,6 +81,10 @@ b,strong{font-weight:800}
 .pill.soft{background:rgba(255,255,255,.92)}
 .pill.flame{background:#FFF0DE;color:#B4703A;font-weight:700;padding:5px 10px;box-shadow:none}
 .pill.tiny{font-size:11px;padding:4px 9px;background:#FFF6E6;box-shadow:none;color:#A6763F;font-weight:700}
+.pill.sync-badge{background:#F3F1EC;color:#7E7466;border:1px solid #E7E1D5;font-weight:700;transition:background .3s,color .3s,border-color .3s}
+.pill.sync-badge[data-mode="on"]{background:#EFFAF3;color:#3E7B5B;border-color:#C9E8D5}
+.pill.sync-badge[data-mode="wait"]{background:#FFF8EA;color:#A6752F;border-color:#F0E0C2}
+.pill.sync-badge[data-mode="err"]{background:#FFF3EC;color:#A8632C;border-color:#F1D8C6}
 
 /* ---------- layout ---------- */
 main{padding:10px 0 0}
@@ -478,6 +482,7 @@ body.sheet-open{overflow:hidden}
       <p class="motto-line" id="mottoLine">우리집의 포근한 하루</p>
     </div>
     <div class="header-pill-row">
+      <span class="pill tiny sync-badge" id="syncBadge" data-mode="wait" title="가족 실시간 동기화 상태">연결 중…</span>
       <button class="pill soft" data-act="todayline">✨ <span id="todayLineText">오늘도 함께 기록해요</span></button>
     </div>
   </header>
@@ -555,6 +560,8 @@ body.sheet-open{overflow:hidden}
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-database-compat.js" crossorigin="anonymous"></script>
 <script>
 (function(){
 'use strict';
@@ -854,7 +861,162 @@ function loadState() {
 
 function save() {
   try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* 저장 불가 환경 */ }
+  queuePush();
 }
+
+/* =========================================================
+   3-B. 실시간 가족 동기화 (Firebase Realtime Database)
+   ========================================================= */
+const FB_CONFIG = {
+  apiKey: "AIzaSyDX5_BVyTRJGfy5DXecIEBmgLlRj87nIFc",
+  authDomain: "kate-family-note.firebaseapp.com",
+  databaseURL: "https://kate-family-note-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "kate-family-note",
+  storageBucket: "kate-family-note.firebasestorage.app",
+  messagingSenderId: "1042638745052",
+  appId: "1:1042638745052:web:3b3eb123cc3b2fbc243319"
+};
+/* 가족 전용 방 키 — 이 경로 밖은 보안 규칙으로 막혀 있어요 */
+const ROOM_PATH = 'rooms/fam_Yb7Qw3Tn8Ks5Vp2Rm6Xd9Lz4';
+/* 이 기기에만 남기는 값(다른 기기로 넘기지 않음) */
+const LOCAL_ONLY = ['who', 'weather'];
+
+const sync = {
+  ref: null, on: false, seeded: false, applying: false, connected: false,
+  timer: null, fails: 0, lastAt: 0,
+  /* 탭(기기)마다 다른 임시 id — 내가 보낸 값이 메아리로 돌아오는 것과 다른 기기 기록을 구분한다 */
+  clientId: (function () {
+    const fresh = 'dev_' + Math.random().toString(36).slice(2, 10);
+    try {
+      let v = sessionStorage.getItem('familyDashboard.tabId');
+      if (!v) { sessionStorage.setItem('familyDashboard.tabId', fresh); v = fresh; }
+      return v;
+    } catch (e) { return fresh; }
+  })()
+};
+
+/* localStorage에만 저장(원격 반영 없이) */
+function saveLocal() {
+  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* 저장 불가 환경 */ }
+}
+
+function setSyncState(text, mode, title) {
+  const el = document.getElementById('syncBadge');
+  if (!el) return;
+  if (el.textContent !== text) el.textContent = text;
+  el.setAttribute('data-mode', mode || '');
+  el.title = title || text;
+}
+
+/* 원격으로 보낼 값 — 이 기기 전용 값은 뺀다 */
+function syncPayloadData() {
+  const out = {};
+  Object.keys(state).forEach(function (k) { if (LOCAL_ONLY.indexOf(k) === -1) out[k] = state[k]; });
+  return out;
+}
+
+function pushNow() {
+  if (!sync.on || !sync.ref) return;
+  sync.ref.set({
+    data: syncPayloadData(),
+    meta: { by: sync.clientId, at: Date.now(), v: 1 }
+  }).then(function () {
+    sync.fails = 0;
+    sync.lastAt = Date.now();
+    if (sync.connected) setSyncState('실시간 동기화 중', 'on', '가족 모두에게 방금 저장됐어요');
+  }).catch(function () {
+    sync.fails++;
+    setSyncState('저장 지연 · 재시도 중', 'err', '네트워크나 보안 규칙 때문에 아직 못 보냈어요');
+    if (sync.fails <= 5) setTimeout(pushNow, 4000);
+  });
+}
+
+function queuePush() {
+  if (!sync.on || !sync.ref) return;
+  clearTimeout(sync.timer);
+  sync.timer = setTimeout(function () { sync.timer = null; pushNow(); }, 150);
+}
+
+function flushPush() {
+  if (sync.timer) { clearTimeout(sync.timer); sync.timer = null; pushNow(); }
+}
+
+/* 다른 기기 기록을 이 기기에 반영 */
+function applyRemote(data) {
+  const keep = {};
+  LOCAL_ONLY.forEach(function (k) { keep[k] = state[k]; });
+  const next = mergeState(defaultState(), data);
+
+  /* 대화는 id 기준 합집합 — 동시에 보낸 메시지가 사라지지 않도록 */
+  const chatMap = {};
+  (state.chat || []).forEach(function (m) { if (m && m.id) chatMap[m.id] = m; });
+  (next.chat || []).forEach(function (m) { if (m && m.id) chatMap[m.id] = m; });
+  next.chat = Object.keys(chatMap).map(function (k) { return chatMap[k]; })
+    .sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
+
+  /* 한 번 찍은 도장은 유지 */
+  const stamps = {};
+  (next.stamps || []).concat(state.stamps || []).forEach(function (d) { stamps[d] = 1; });
+  next.stamps = Object.keys(stamps).sort();
+
+  LOCAL_ONLY.forEach(function (k) { if (keep[k] !== undefined) next[k] = keep[k]; });
+  state = next;
+  saveLocal();
+  renderAll();
+}
+
+function onRemoteValue(snap) {
+  const val = snap.val();
+  if (!val || !val.data) { seedRoom(); return; }
+  if (val.meta && val.meta.by === sync.clientId) { sync.lastAt = val.meta.at || sync.lastAt; return; }
+  sync.applying = true;
+  try { applyRemote(val.data); } catch (e) { /* 형식이 다르면 이 기기 값을 유지 */ }
+  sync.applying = false;
+  sync.lastAt = (val.meta && val.meta.at) || Date.now();
+  if (sync.connected) setSyncState('실시간 동기화 중', 'on', '방금 다른 기기 기록을 받았어요');
+}
+
+/* DB가 비어 있을 때만 이 기기 값으로 1회 시딩 */
+function seedRoom() {
+  if (!sync.ref || sync.seeded) return;
+  sync.seeded = true;
+  sync.ref.transaction(function (cur) {
+    if (cur === null) {
+      return { data: syncPayloadData(), meta: { by: sync.clientId, at: Date.now(), v: 1, seed: true } };
+    }
+    return; /* 이미 가족 기록이 있으면 덮어쓰지 않는다 */
+  }).then(function (res) {
+    if (!res.committed) setSyncState('실시간 동기화 중', 'on', '가족 기록을 받아왔어요');
+  }).catch(function () { sync.seeded = false; });
+}
+
+function initSync() {
+  if (typeof firebase === 'undefined' || !firebase.initializeApp || !FB_CONFIG.databaseURL || FB_CONFIG.databaseURL.indexOf('__') === 0) {
+    setSyncState('이 기기에만 저장', 'off', '가족 실시간 동기화가 꺼져 있어 이 기기에만 기록돼요');
+    return;
+  }
+  setSyncState('연결 중…', 'wait', '가족 기록을 맞추는 중이에요');
+  try {
+    if (!firebase.apps || firebase.apps.length === 0) firebase.initializeApp(FB_CONFIG);
+    const db = firebase.database();
+    sync.ref = db.ref(ROOM_PATH);
+    sync.on = true;
+    db.ref('.info/connected').on('value', function (s) {
+      sync.connected = !!s.val();
+      if (!sync.connected) setSyncState('오프라인 · 이 기기에만', 'err', '연결되면 자동으로 다시 맞춰요');
+      else if (sync.on) setSyncState('실시간 동기화 중', 'on', '가족 모두와 같은 기록을 보고 있어요');
+    });
+    sync.ref.on('value', onRemoteValue, function (err) {
+      setSyncState('동기화 오류', 'err', (err && err.message) || '권한 또는 네트워크 문제예요');
+    });
+  } catch (e) {
+    sync.on = false;
+    setSyncState('이 기기에만 저장', 'off', '가족 실시간 동기화를 켜지 못했어요');
+  }
+}
+
+window.addEventListener('pagehide', flushPush);
+document.addEventListener('visibilitychange', function () { if (document.hidden) flushPush(); });
 
 /* =========================================================
    4. 계산 도우미
@@ -1061,7 +1223,7 @@ async function loadWeather(force) {
       pm10: a && a.current ? a.current.pm10 : null,
       pm25: a && a.current ? a.current.pm2_5 : null
     };
-    save();
+    saveLocal();
     renderWeather();
   } catch (e) {
     renderWeather();
@@ -1510,7 +1672,7 @@ function renderChat() {
       '<button class="who-chip ' + (me === m.id ? 'active' : '') + '" data-act="who" data-id="' + m.id + '">' +
         avatarHTML(m.id, 'xs') + esc(m.name) + '</button>'
     ).join('') + '</div>' +
-    '<p class="caption small" style="margin-top:6px">🔒 이 기기 브라우저에만 저장돼요 · 고른 사람은 다음에도 기억해요</p>';
+    '<p class="caption small" style="margin-top:6px">🔒 고른 사람은 이 기기에만 기억돼요 · 대화는 가족 모두에게 실시간으로 보여요</p>';
 
   const list = state.chat.filter(c => !c.deleted);
   let lastDay = '';
@@ -1680,6 +1842,8 @@ function sheetSettings() {
       '<div class="field-row">' + CHILDREN.map(c =>
         '<label class="field"><span>' + esc(memberOf(c).name) + '</span><input id="sGoal-' + c + '" type="number" step="1000" min="0" inputmode="numeric" value="' + (state.wallet[c].goal || 0) + '"></label>'
       ).join('') + '</div>' +
+      '<div class="sheet-note" style="margin-top:10px">가족 실시간 동기화</div>' +
+      '<p class="sheet-note">' + (sync.on ? '켜짐 · 엄마·아빠·아이들 기기가 같은 기록을 함께 봐요.' : '이 기기에만 저장 중이에요(인터넷 연결을 확인해 주세요).') + '</p>' +
       '<div class="sheet-foot" style="margin-top:6px"><button class="btn ghost" data-act="reset-data">예시 데이터로 초기화</button></div>' +
       '<p class="sheet-note">초기화하면 지금까지 체크한 내용과 대화가 모두 지워지고 처음 예시 데이터로 돌아가요.</p>',
     footer: '<button class="btn ghost" data-act="close-sheet">닫기</button>' +
@@ -2163,6 +2327,7 @@ function boot() {
   renderAll();
   switchTab('home');
   loadWeather(false);
+  initSync();
 
   // 자정이 지나면 날짜 관련 표시를 새로 고침
   let lastDay = today();
